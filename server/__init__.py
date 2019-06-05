@@ -222,6 +222,7 @@ def add_api_endpoints(app):
         UsersQueriesUsernameAPI,
         UsersQueriesUsernameFilterAPI,
     )
+    from server.api.users.tasks import UsersTasksAPI
     from server.api.users.actions import (
         UsersActionsSetUsersAPI,
         UsersActionsSetLevelAPI,
@@ -505,6 +506,8 @@ def add_api_endpoints(app):
         UsersActionsSetExpertModeAPI,
         "/api/v2/users/<string:username>/actions/set-expert-mode/<string:is_expert>/",
     )
+
+    api.add_resource(UsersTasksAPI, "/api/v2/users/me/tasks/")
     api.add_resource(
         UsersActionsVerifyEmailAPI, "/api/v2/users/myself/actions/verify-email/"
     )
