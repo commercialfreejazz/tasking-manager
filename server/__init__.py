@@ -191,6 +191,9 @@ def add_api_endpoints(app):
     # Annotations API import
     from server.api.annotations.resources import AnnotationsRestAPI
 
+    # Predictions API import
+    from server.api.ml_enabler.resources import PredictionsRestAPI
+
     # Issues API import
     from server.api.issues.resources import IssuesRestAPI, IssuesAllAPI
 
@@ -548,3 +551,4 @@ def add_api_endpoints(app):
         endpoint="check_application",
         methods=["PATCH"],
     )
+    api.add_resource(PredictionsRestAPI, "/api/v2/predictions/")
