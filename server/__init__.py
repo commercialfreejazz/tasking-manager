@@ -162,6 +162,7 @@ def init_flask_restful_routes(app):
         UserIdAPI,
         UserOSMAPI,
         UserMappedProjects,
+        UserRecommendedProjects,
         UserSetRole,
         UserSetLevel,
         UserSetExpertMode,
@@ -169,7 +170,6 @@ def init_flask_restful_routes(app):
         UserSearchFilterAPI,
         UserSearchAllAPI,
         UserUpdateAPI,
-        UserContributionsAPI,
     )
     from server.api.validator_apis import (
         LockTasksForValidationAPI,
@@ -307,10 +307,6 @@ def init_flask_restful_routes(app):
         StatsContributionsAPI, "/api/v1/stats/project/<int:project_id>/contributions"
     )
     api.add_resource(
-        StatsContributionsByDayAPI,
-        "/api/v1/stats/project/<int:project_id>/contributions/day",
-    )
-    api.add_resource(
         TaskAnnotationsAPI,
         "/api/v1/project/<int:project_id>/task-annotations/<string:annotation_type>",
         "/api/v1/project/<int:project_id>/task-annotations",
@@ -353,6 +349,9 @@ def init_flask_restful_routes(app):
         UserMappedProjects, "/api/v1/user/<string:username>/mapped-projects"
     )
     api.add_resource(
+        UserRecommendedProjects, "/api/v1/user/<string:username>/recommended-projects"
+    )
+    api.add_resource(
         UserInvalidatedTasks, "/api/v1/user/<string:username>/invalidated-tasks"
     )
     api.add_resource(UserOSMAPI, "/api/v1/user/<string:username>/osm-details")
@@ -364,7 +363,6 @@ def init_flask_restful_routes(app):
     )
     api.add_resource(UserAcceptLicense, "/api/v1/user/accept-license/<int:license_id>")
     api.add_resource(UserIdAPI, "/api/v1/user-id/<int:userid>")
-    api.add_resource(UserContributionsAPI, "/api/v1/user-id/<int:userid>/contributions")
     api.add_resource(IntersectingTilesAPI, "/api/v1/grid/intersecting-tiles")
     api.add_resource(
         SplitTaskAPI, "/api/v1/project/<int:project_id>/task/<int:task_id>/split"
