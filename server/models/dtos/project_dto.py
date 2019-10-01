@@ -232,6 +232,7 @@ class ProjectSearchDTO(Model):
     is_project_manager = BooleanType(required=True, default=False)
     mapping_editors = ListType(StringType, validators=[is_known_editor])
     validation_editors = ListType(StringType, validators=[is_known_editor])
+    created_by = IntType(required=False)
 
     def __hash__(self):
         """ Make object hashable so we can cache user searches"""
@@ -267,6 +268,7 @@ class ProjectSearchDTO(Model):
                 self.is_project_manager,
                 hashable_mapping_editors,
                 hashable_validation_editors,
+                self.created_by,
             )
         )
 

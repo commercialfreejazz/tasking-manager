@@ -36,7 +36,7 @@ class SystemAuthenticationLoginAPI(Resource):
         responses:
           302:
             description: Redirects to OSM
-        """
+       """
         redirect_query = ""
         redirect_to = request.args.get("redirect_to")
         if redirect_to and "login" not in redirect_to:

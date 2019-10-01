@@ -434,7 +434,54 @@ class ProjectsRestAPI(Resource):
             return {"Error": "Unable to delete project"}, 500
 
 
-class ProjectsAllAPI(Resource):
+class ProjectSearchBase(Resource):
+    def setup_search_dto(self):
+        try:
+            search_dto = ProjectSearchDTO()
+            search_dto.preferred_locale = request.environ.get("HTTP_ACCEPT_LANGUAGE")
+            search_dto.mapper_level = request.args.get("mapperLevel")
+            search_dto.organisation_tag = request.args.get("organisationTag")
+            search_dto.campaign_tag = request.args.get("campaignTag")
+            search_dto.order_by = request.args.get("orderBy", "priority")
+            search_dto.order_by_type = request.args.get("orderByType", "ASC")
+            search_dto.page = (
+                int(request.args.get("page")) if request.args.get("page") else 1
+            )
+            search_dto.text_search = request.args.get("textSearch")
+
+            # See https://github.com/hotosm/tasking-manager/pull/922 for more info
+            try:
+                verify_token(
+                    request.environ.get("HTTP_AUTHORIZATION").split(None, 1)[1]
+                )
+                if UserService.is_user_a_project_manager(tm.authenticated_user_id):
+                    search_dto.is_project_manager = True
+
+                search_dto.created_by = (
+                    tm.authenticated_user_id
+                    if request.args.get("createdByMe")
+                    else False
+                )
+            except Exception:
+                pass
+
+            mapping_types_str = request.args.get("mappingTypes")
+            if mapping_types_str:
+                search_dto.mapping_types = map(
+                    str, mapping_types_str.split(",")
+                )  # Extract list from string
+            project_statuses_str = request.args.get("projectStatuses")
+            if project_statuses_str:
+                search_dto.project_statuses = map(str, project_statuses_str.split(","))
+            search_dto.validate()
+        except DataError as e:
+            current_app.logger.error(f"Error validating request: {str(e)}")
+            return {"Error": "Unable to fetch projects"}, 400
+
+        return search_dto
+
+
+class ProjectsAllAPI(ProjectSearchBase):
     def get(self):
         """
         List and search for projects
@@ -495,6 +542,12 @@ class ProjectsAllAPI(Resource):
               name: projectStatuses
               description: Authenticated PMs can search for archived or draft statuses
               type: string
+            - in: query
+              name: createdByMe
+              description: limit to projects created by authenticated user
+              type: boolean
+              required: true
+              default: false
         responses:
             200:
                 description: Projects found
@@ -503,41 +556,11 @@ class ProjectsAllAPI(Resource):
             500:
                 description: Internal Server Error
         """
-        try:
-            search_dto = ProjectSearchDTO()
-            search_dto.preferred_locale = request.environ.get("HTTP_ACCEPT_LANGUAGE")
-            search_dto.mapper_level = request.args.get("mapperLevel")
-            search_dto.organisation_tag = request.args.get("organisationTag")
-            search_dto.campaign_tag = request.args.get("campaignTag")
-            search_dto.order_by = request.args.get("orderBy", "priority")
-            search_dto.order_by_type = request.args.get("orderByType", "ASC")
-            search_dto.page = (
-                int(request.args.get("page")) if request.args.get("page") else 1
-            )
-            search_dto.text_search = request.args.get("textSearch")
 
-            # See https://github.com/hotosm/tasking-manager/pull/922 for more info
-            try:
-                verify_token(
-                    request.environ.get("HTTP_AUTHORIZATION").split(None, 1)[1]
-                )
-                if UserService.is_user_a_project_manager(tm.authenticated_user_id):
-                    search_dto.is_project_manager = True
-            except Exception:
-                pass
-
-            mapping_types_str = request.args.get("mappingTypes")
-            if mapping_types_str:
-                search_dto.mapping_types = map(
-                    str, mapping_types_str.split(",")
-                )  # Extract list from string
-            project_statuses_str = request.args.get("projectStatuses")
-            if project_statuses_str:
-                search_dto.project_statuses = map(str, project_statuses_str.split(","))
-            search_dto.validate()
-        except DataError as e:
-            current_app.logger.error(f"Error validating request: {str(e)}")
-            return {"Error": "Unable to fetch projects"}, 400
+        search_dto = self.setup_search_dto()
+        # returns the error
+        if type(search_dto) != ProjectSearchDTO:
+            return search_dto
 
         try:
             results_dto = ProjectSearchService.search_projects(search_dto)
@@ -630,7 +653,7 @@ class ProjectsQueriesBboxAPI(Resource):
             return {"Error": "Unable to fetch projects"}, 500
 
 
-class ProjectsQueriesOwnerAPI(Resource):
+class ProjectsQueriesOwnerAPI(ProjectSearchBase):
     @tm.pm_only()
     @token_auth.login_required
     def get(self):
@@ -664,9 +687,17 @@ class ProjectsQueriesOwnerAPI(Resource):
             500:
                 description: Internal Server Error
         """
+
+        search_dto = self.setup_search_dto()
+        # returns the error
+        if type(search_dto) != ProjectSearchDTO:
+            return search_dto
+
         try:
             admin_projects = ProjectAdminService.get_projects_for_admin(
-                tm.authenticated_user_id, request.environ.get("HTTP_ACCEPT_LANGUAGE")
+                tm.authenticated_user_id,
+                request.environ.get("HTTP_ACCEPT_LANGUAGE"),
+                search_dto,
             )
             return admin_projects.to_primitive(), 200
         except NotFound:
