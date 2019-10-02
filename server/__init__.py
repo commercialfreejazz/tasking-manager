@@ -152,7 +152,7 @@ def add_api_endpoints(app):
         ProjectsActionsMessageContributorsAPI,
         ProjectsActionsFeatureAPI,
         ProjectsActionsUnFeatureAPI,
-        ProjectInterestRelationshipAPI,
+        ProjectsActionsSetInterestsAPI,
     )
 
     from server.api.projects.favorites import ProjectFavoriteAPI
@@ -198,7 +198,7 @@ def add_api_endpoints(app):
     from server.api.issues.resources import IssuesRestAPI, IssuesAllAPI
 
     # Interests API import
-    from server.api.interests.resources import InterestAPI
+    from server.api.interests.resources import InterestsRestAPI, InterestsAllAPI
 
     # Licenses API import
     from server.api.licenses.resources import LicensesRestAPI, LicensesAllAPI
@@ -235,10 +235,13 @@ def add_api_endpoints(app):
         UsersActionsSetRoleAPI,
         UsersActionsSetExpertModeAPI,
         UsersActionsVerifyEmailAPI,
-        UserInterestRelationshipAPI,
+        UsersActionsSetInterestsAPI,
     )
     from server.api.users.openstreetmap import UsersOpenStreetMapAPI
-    from server.api.users.statistics import UsersStatisticsAPI
+    from server.api.users.statistics import (
+        UsersStatisticsAPI,
+        UsersStatisticsInterestsAPI,
+    )
 
     # System API endpoint
     from server.api.system.general import SystemDocsAPI
@@ -334,7 +337,7 @@ def add_api_endpoints(app):
     )
 
     api.add_resource(
-        ProjectInterestRelationshipAPI,
+        ProjectsActionsSetInterestsAPI,
         "/api/v2/projects/actions/set-interests",
         methods=["POST"],
     )
@@ -511,17 +514,11 @@ def add_api_endpoints(app):
     )
     api.add_resource(UserFavoritesAPI, "/api/v2/users/queries/favorites/")
 
-    api.add_resource(
-        UserInterestRelationshipAPI,
-        "/api/v2/users/queries/interests/<int:user_id>",
-        methods=["GET"],
-    )
-
     # Users Actions endpoint
     api.add_resource(UsersActionsSetUsersAPI, "/api/v2/users/actions/set-user/")
 
     api.add_resource(
-        UserInterestRelationshipAPI,
+        UsersActionsSetInterestsAPI,
         "/api/v2/users/actions/set-interests",
         endpoint="create_user_interest",
         methods=["POST"],
@@ -545,6 +542,12 @@ def add_api_endpoints(app):
 
     # Users Statistics endpoint
     api.add_resource(UsersStatisticsAPI, "/api/v2/users/<string:username>/statistics/")
+
+    api.add_resource(
+        UsersStatisticsInterestsAPI,
+        "/api/v2/users/<int:user_id>/statistics/interests",
+        methods=["GET"],
+    )
 
     # Users openstreetmap endpoint
     api.add_resource(
@@ -583,11 +586,13 @@ def add_api_endpoints(app):
         methods=["PATCH"],
     )
     api.add_resource(
-        InterestAPI,
+        InterestsAllAPI,
         "/api/v2/interests/",
         endpoint="create_interest",
         methods=["POST", "GET"],
     )
     api.add_resource(
-        InterestAPI, "/api/v2/interests/<int:interest_id>/", methods=["PATCH", "DELETE"]
+        InterestsRestAPI,
+        "/api/v2/interests/<int:interest_id>/",
+        methods=["PATCH", "DELETE"],
     )

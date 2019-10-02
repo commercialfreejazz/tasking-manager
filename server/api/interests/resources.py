@@ -9,7 +9,7 @@ from server.services.users.authentication_service import token_auth
 from sqlalchemy.exc import IntegrityError
 
 
-class InterestAPI(Resource):
+class InterestsAllAPI(Resource):
     @token_auth.login_required
     def post(self):
         """
@@ -95,6 +95,8 @@ class InterestAPI(Resource):
             current_app.logger.critical(error_msg)
             return {"error": error_msg}, 500
 
+
+class InterestsRestAPI(Resource):
     @token_auth.login_required
     def patch(self, interest_id):
         """

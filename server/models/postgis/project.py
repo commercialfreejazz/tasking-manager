@@ -58,7 +58,6 @@ from server.services.grid.grid_service import GridService
 from server.models.postgis.interests import Interest, projects_interests
 
 
-
 # Secondary table defining many-to-many join for projects that were favorited by users.
 project_favorites = db.Table(
     "project_favorites",
@@ -178,7 +177,6 @@ class Project(db.Model):
     )
     favorited = db.relationship(User, secondary=project_favorites, backref="favorites")
     interests = db.relationship(Interest, secondary=projects_interests)
-
 
     def create_draft_project(self, draft_project_dto: DraftProjectDTO):
         """

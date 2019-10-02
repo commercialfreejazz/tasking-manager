@@ -230,7 +230,7 @@ class ProjectsActionsUnFeatureAPI(Resource):
             return {"error": error_msg}, 500
 
 
-class ProjectInterestRelationshipAPI(Resource):
+class ProjectsActionsSetInterestsAPI(Resource):
     def post(self):
         """
         Creates a relationship between project and interests

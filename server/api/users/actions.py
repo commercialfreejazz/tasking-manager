@@ -289,44 +289,7 @@ class UsersActionsVerifyEmailAPI(Resource):
             return {"Error": "Unable to send verification email"}, 500
 
 
-class UserInterestRelationshipAPI(Resource):
-    @token_auth.login_required
-    def get(self, user_id):
-        """
-        Get rate of contributions from a user given his/her interests
-        ---
-        tags:
-            - interests
-        produces:
-            - application/json
-        parameters:
-            - in: header
-              name: Authorization
-              description: Base64 encoded session token
-              required: true
-              type: string
-              default: Token sessionTokenHere==
-            - name: user_id
-              in: path
-              description: User id
-              required: true
-              type: integer
-        responses:
-            200:
-                description: Interest found
-            500:
-                description: Internal Server Error
-        """
-        try:
-            rate = InterestService.compute_contributions_rate(user_id)
-            return rate.to_primitive(), 200
-        except NotFound:
-            return {"Error": "User not Found"}, 404
-        except Exception as e:
-            error_msg = f"Interest GET - unhandled error: {str(e)}"
-            current_app.logger.critical(error_msg)
-            return {"error": error_msg}, 500
-
+class UsersActionsSetInterestsAPI(Resource):
     @token_auth.login_required
     def post(self):
         """
