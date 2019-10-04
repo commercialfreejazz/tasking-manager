@@ -180,6 +180,7 @@ class ProjectDTO(Model):
     )
     campaign_tag = StringType(serialized_name="campaignTag")
     organisation_tag = StringType(serialized_name="organisationTag")
+    country_tag = ListType(StringType, serialized_name="countryTag")
     license_id = IntType(serialized_name="licenseId")
 
     allowed_usernames = ListType(
@@ -226,7 +227,7 @@ class ProjectSearchDTO(Model):
     campaign_tag = StringType()
     order_by = StringType(choices=ORDER_BY_OPTIONS)
     order_by_type = StringType(choices=("ASC", "DESC"))
-
+    country = StringType()
     page = IntType(required=True)
     text_search = StringType()
     is_project_manager = BooleanType(required=True, default=False)
@@ -298,6 +299,7 @@ class ListSearchResultDTO(Model):
     last_updated = DateTimeType(serialized_name="lastUpdated")
     due_date = DateTimeType(serialized_name="dueDate")
     total_contributors = IntType(serialized_name="totalContributors")
+    country = StringType(serialize_when_none=False)
 
 
 class ProjectSearchResultsDTO(Model):
@@ -370,6 +372,7 @@ class ProjectSummary(Model):
     priority = StringType(serialized_name="projectPriority")
     campaign_tag = StringType(serialized_name="campaignTag")
     organisation_tag = StringType(serialized_name="organisationTag")
+    country_tag = ListType(StringType, serialized_name="countryTag")
     entities_to_map = StringType(serialized_name="entitiesToMap")
     mapping_types = ListType(
         StringType, serialized_name="mappingTypes", validators=[is_known_mapping_type]

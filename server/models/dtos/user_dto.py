@@ -64,6 +64,7 @@ class UserDTO(Model):
     city = StringType(serialized_name="city")
     country = StringType(serialized_name="country")
     name = StringType(serialized_name="name")
+    picture_url = StringType(serialized_name="pictureUrl")
     default_editor = StringType(serialized_name="defaultEditor")
     mentions_notifications = BooleanType(serialized_name="mentionsNotifications")
     comments_notifications = BooleanType(serialized_name="commentsNotifications")
@@ -82,6 +83,7 @@ class UserStatsDTO(Model):
     time_spent_mapping = IntType(serialized_name="timeSpentMapping")
     time_spent_validating = IntType(serialized_name="timeSpentValidating")
     projects_mapped = IntType(serialized_name="projectsMapped")
+    countries_touched = IntType(serialized_name="countriesTouched")
     tasks_mapped = IntType(serialized_name="tasksMapped")
     tasks_validated = IntType(serialized_name="tasksValidated")
 
