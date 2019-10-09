@@ -66,11 +66,8 @@ class TestInterestService(unittest.TestCase):
         if self.skip_tests:
             return
 
-        # load interests from json file.
-        path = os.path.join("tests", "database", "interests.json")
-        InterestService.load_from_file(path)
-
-        # Verify that all models are stored correctly.
+        interests = ["interest_number_{0}".format(i) for i in range(1, 9)]
+        [InterestService.create(interest_name=i) for i in interests]
         interests = InterestService.get_all_interests().to_primitive()["interests"]
         self.assertEqual(len(interests), 8)
 

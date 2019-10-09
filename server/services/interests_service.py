@@ -1,16 +1,19 @@
-import json
-
 from server import db
 
-from sqlalchemy import func
+from sqlalchemy import func, distinct
 
 from server.models.dtos.interests_dto import (
     InterestsDTO,
     InterestrateDTO,
     InterestratesDTO,
+    InterestDTO,
 )
 from server.models.postgis.task import TaskHistory
-from server.models.postgis.interests import Interest, projects_interests
+from server.models.postgis.interests import (
+    Interest,
+    projects_interests,
+    users_interests,
+)
 from server.services.project_service import ProjectService
 from server.services.users.user_service import UserService
 
@@ -34,19 +37,36 @@ class InterestService:
         return interest.as_dto()
 
     @staticmethod
-    def load_from_file(file):
-        with open(file, "r") as f:
-            data = json.load(f)
-
-        for interest in data:
-            interest_model = Interest(name=interest["name"])
-            interest_model.create()
-
-    @staticmethod
     def get_all_interests():
-        interests = Interest.query.all()
+        interests = (
+            Interest.query.with_entities(
+                Interest.id,
+                Interest.name,
+                func.count(distinct(users_interests.c.user_id)).label("count_users"),
+                func.count(distinct(projects_interests.c.project_id)).label(
+                    "count_projects"
+                ),
+            )
+            .outerjoin(users_interests, Interest.id == users_interests.c.interest_id)
+            .outerjoin(
+                projects_interests, Interest.id == projects_interests.c.interest_id
+            )
+            .group_by(Interest.id)
+            .order_by(Interest.id)
+            .all()
+        )
         dto = InterestsDTO()
-        dto.interests = [i.as_dto() for i in interests]
+        dto.interests = [
+            InterestDTO(
+                dict(
+                    id=i.id,
+                    name=i.name,
+                    count_projects=i.count_projects,
+                    count_users=i.count_users,
+                )
+            )
+            for i in interests
+        ]
 
         return dto
 
