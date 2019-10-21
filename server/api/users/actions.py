@@ -291,7 +291,7 @@ class UsersActionsVerifyEmailAPI(Resource):
 
 class UsersActionsSetInterestsAPI(Resource):
     @token_auth.login_required
-    def post(self):
+    def post(self, user_id):
         """
         Creates a relationship between user and interests
         ---
@@ -306,6 +306,12 @@ class UsersActionsSetInterestsAPI(Resource):
               required: true
               type: string
               default: Token sessionTokenHere==
+            - name: user_id
+              in: path
+              description: The unique OSM user id
+              required: true
+              type: integer
+              default: 1
             - in: body
               name: body
               required: true
@@ -328,10 +334,14 @@ class UsersActionsSetInterestsAPI(Resource):
         """
         try:
             data = request.get_json()
+            if user_id != tm.authenticated_user_id:
+                raise ValueError("User id and user token mismatch")
             user_interests = InterestService.create_or_update_user_interests(
                 tm.authenticated_user_id, data["interests"]
             )
             return user_interests.to_primitive(), 200
+        except ValueError as e:
+            return {"Error": str(e)}, 400
         except NotFound:
             return {"Error": "User not Found"}, 404
         except Exception as e:
