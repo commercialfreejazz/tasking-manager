@@ -231,7 +231,7 @@ class ProjectsActionsUnFeatureAPI(Resource):
 
 
 class ProjectsActionsSetInterestsAPI(Resource):
-    def post(self):
+    def post(self, project_id):
         """
         Creates a relationship between project and interests
         ---
@@ -246,14 +246,18 @@ class ProjectsActionsSetInterestsAPI(Resource):
               required: true
               type: string
               default: Token sessionTokenHere==
+            - name: project_id
+              in: path
+              description: The unique project ID
+              required: true
+              type: integer
+              default: 1
             - in: body
               name: body
               required: true
               description: JSON object for creating/updating project and interests relationships
               schema:
                   properties:
-                      project_id:
-                          type: integer
                       interests:
                           type: array
                           items:
@@ -271,7 +275,7 @@ class ProjectsActionsSetInterestsAPI(Resource):
         try:
             data = request.get_json()
             project_interests = InterestService.create_or_update_project_interests(
-                data["project_id"], data["interests"]
+                project_id, data["interests"]
             )
             return project_interests.to_primitive(), 200
         except NotFound:

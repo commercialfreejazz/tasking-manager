@@ -338,7 +338,7 @@ def add_api_endpoints(app):
 
     api.add_resource(
         ProjectsActionsSetInterestsAPI,
-        "/api/v2/projects/actions/set-interests",
+        "/api/v2/projects/<int:project_id>/actions/set-interests",
         methods=["POST"],
     )
 
