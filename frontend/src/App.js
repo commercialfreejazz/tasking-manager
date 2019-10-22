@@ -11,6 +11,7 @@ import { ProjectsPage, ProjectsPageIndex, MoreFilters } from './views/project';
 import { Authorized } from './views/authorized';
 import { Login } from './views/login';
 import { Welcome } from './views/welcome';
+import { Editor } from './components/editor';
 import { Settings } from './views/settings';
 import { NotFound } from './views/notFound';
 import { SelectTask } from './views/taskSelection';
@@ -35,13 +36,13 @@ function App() {
                 <Authorized path="authorized" />
                 <Login path="login" />
                 <Welcome path="welcome" />
+                <Editor path="editor" />
                 <Settings path="settings" />
                 <SelectTask path="projects/:id/map" />
                 <NotFound default />
               </Router>
             </QueryParamProvider>
           </div>
-          <Footer location={location} />
         </div>
       )}
     </Location>
