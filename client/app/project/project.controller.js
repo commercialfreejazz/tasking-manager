@@ -1594,7 +1594,7 @@
                     imageryUrl,
                     vm.projectData.projectId,
                     vm.getSelectTaskIds(),
-                    !vm.user.isExpert ? vm.projectData.idPresets : []
+                    vm.projectData.idPresets
                 );
             }
             else if (editor === 'potlatch2') {

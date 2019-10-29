@@ -129,6 +129,7 @@
 
         // User role
         vm.userRole = '';
+        vm.userIsExpert = false;
 
         activate();
 
@@ -148,6 +149,7 @@
                 var resultsPromise = accountService.getUser(session.username);
                 resultsPromise.then(function (user) {
                     vm.userRole = user.role;
+                    vm.userIsExpert = user.isExpert;
                     // Returned the user successfully. Check the user's role
                     if (user.role !== 'PROJECT_MANAGER' && user.role !== 'ADMIN'){
                         $location.path('/');
@@ -1045,7 +1047,7 @@
          * Populate the iD preset selections from the project data
          */
         function populateIdPresets(){
-            if (vm.project.idPresets.length > 0) {
+            if (vm.project.idPresets && vm.project.idPresets.length > 0) {
                 vm.limitPresets = true;
                 vm.project.idPresets.forEach(function(preset) {
                     vm.selectedPresets[preset] = true;

@@ -336,7 +336,7 @@
                                                 <input type="checkbox" ng-model="editProjectCtrl.mappingTypes.other"/>{{ 'Other' | translate }}
                                             </label>
                                         </div>
-                                        <div>
+                                        <div ng-show="editProjectCtrl.limitPresets || editProjectCtrl.userIsExpert">
                                             <div class="limit-presets">
                                                 <label class="form__label">{{ 'iD Editor Presets *' | translate }}</label>
                                                 <p>
