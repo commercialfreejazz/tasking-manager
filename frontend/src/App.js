@@ -5,6 +5,7 @@ import { QueryParamProvider } from 'use-query-params';
 import './assets/styles/index.scss';
 import { Header } from './components/header';
 import { Footer } from './components/footer';
+import { ProjectCreate } from './components/projectCreate/create';
 import { Home } from './views/home';
 import { AboutPage } from './views/about';
 import { ProjectsPage, ProjectsPageIndex, MoreFilters, ProjectDetailPage } from './views/project';
@@ -38,6 +39,7 @@ function App() {
             <Settings path="settings" />
             <SelectTask path="projects/:id/map" />
             <ProjectDetailPage path="projects/:id" />
+            <ProjectCreate path="create" />
             <NotFound default />
           </Router>
         </QueryParamProvider>
