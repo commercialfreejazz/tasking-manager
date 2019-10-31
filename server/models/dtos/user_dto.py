@@ -58,6 +58,37 @@ class UserDTO(Model):
     twitter_id = StringType(serialized_name="twitterId")
     facebook_id = StringType(serialized_name="facebookId")
     linkedin_id = StringType(serialized_name="linkedinId")
+    slack_id = StringType(serialized_name="slackId")
+    irc_id = StringType(serialized_name="ircId")
+    skype_id = StringType(serialized_name="skypeId")
+    city = StringType(serialized_name="city")
+    country = StringType(serialized_name="country")
+    name = StringType(serialized_name="name")
+    picture_url = StringType(serialized_name="pictureUrl")
+    default_editor = StringType(serialized_name="defaultEditor")
+    mentions_notifications = BooleanType(serialized_name="mentionsNotifications")
+    comments_notifications = BooleanType(serialized_name="commentsNotifications")
+    projects_notifications = BooleanType(serialized_name="projectsNotifications")
+    expert_mode = BooleanType(serialized_name="expertMode")
+
+    # these are read only
+    missing_maps_profile = StringType(serialized_name="missingMapsProfile")
+    osm_profile = StringType(serialized_name="osmProfile")
+    gender = StringType(
+        serialized_name="gender",
+        choices=("MALE", "FEMALE", "SELF_DESCRIBE", "PREFER_NOT"),
+    )
+    self_description_gender = StringType(
+        serialized_name="selfDescriptionGender", default=None
+    )
+
+    def validate_self_description(self, data, value):
+        if (
+            data["gender"] == "SELF_DESCRIBE"
+            and data["self_description_gender"] is None
+        ):
+            raise ValueError("selfDescription field is not defined")
+        return value
 
 
 class UserStatsDTO(Model):
@@ -67,6 +98,7 @@ class UserStatsDTO(Model):
     time_spent_mapping = IntType(serialized_name="timeSpentMapping")
     time_spent_validating = IntType(serialized_name="timeSpentValidating")
     projects_mapped = IntType(serialized_name="projectsMapped")
+    countries_touched = IntType(serialized_name="countriesTouched")
     tasks_mapped = IntType(serialized_name="tasksMapped")
     tasks_validated = IntType(serialized_name="tasksValidated")
 

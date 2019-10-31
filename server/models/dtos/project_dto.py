@@ -20,6 +20,15 @@ from server.models.postgis.statuses import (
     Editors,
 )
 
+ORDER_BY_OPTIONS = (
+    "id",
+    "mapper_level",
+    "priority",
+    "status",
+    "last_updated",
+    "due_date",
+)
+
 
 def is_known_project_status(value):
     """ Validates that Project Status is known value """
@@ -118,7 +127,7 @@ class ProjectDTO(Model):
     project_id = IntType(serialized_name="projectId")
     project_status = StringType(
         required=True,
-        serialized_name="projectStatus",
+        serialized_name="status",
         validators=[is_known_project_status],
         serialize_when_none=False,
     )
@@ -147,17 +156,19 @@ class ProjectDTO(Model):
         serialized_name="mapperLevel",
         validators=[is_known_mapping_level],
     )
-    enforce_mapper_level = BooleanType(
-        required=True, default=False, serialized_name="enforceMapperLevel"
+    restrict_mapping_level_to_project = BooleanType(
+        required=True, default=False, serialized_name="restrictMappingLevelToProject"
     )
-    enforce_validator_role = BooleanType(
-        required=True, default=False, serialized_name="enforceValidatorRole"
+    restrict_validation_role = BooleanType(
+        required=True, default=False, serialized_name="restrictValidationRole"
     )
     enforce_random_task_selection = BooleanType(
         required=False, default=False, serialized_name="enforceRandomTaskSelection"
     )
-    allow_non_beginners = BooleanType(
-        required=False, default=False, serialized_name="allowNonBeginners"
+    restrict_validation_level_intermediate = BooleanType(
+        required=False,
+        default=False,
+        serialized_name="restrictValidationLevelIntermediate",
     )
     private = BooleanType(required=True)
     entities_to_map = StringType(serialized_name="entitiesToMap")
@@ -171,7 +182,9 @@ class ProjectDTO(Model):
     )
     campaign_tag = StringType(serialized_name="campaignTag")
     organisation_tag = StringType(serialized_name="organisationTag")
+    country_tag = ListType(StringType, serialized_name="countryTag")
     license_id = IntType(serialized_name="licenseId")
+
     allowed_usernames = ListType(
         StringType(), serialized_name="allowedUsernames", default=[]
     )
@@ -180,6 +193,9 @@ class ProjectDTO(Model):
     last_updated = DateTimeType(serialized_name="lastUpdated")
     author = StringType()
     active_mappers = IntType(serialized_name="activeMappers")
+    percent_mapped = IntType(serialized_name="percentMapped")
+    percent_validated = IntType(serialized_name="percentValidated")
+    percent_bad_imagery = IntType(serialized_name="percentBadImagery")
     task_creation_mode = StringType(
         required=True,
         serialized_name="taskCreationMode",
@@ -202,15 +218,37 @@ class ProjectDTO(Model):
     )
 
 
+class ProjectFavoriteDTO(Model):
+    """ DTO used to define project favorite by user """
+
+    project_id = IntType(required=True)
+    user_id = IntType(required=True)
+
+
+class ProjectFavoritesDTO(Model):
+    """ DTO for projects a user has mapped """
+
+    def __init__(self):
+        super().__init__()
+        self.favorited_projects = []
+
+    favorited_projects = ListType(
+        ModelType(ProjectDTO), serialized_name="favoritedProjects"
+    )
+
+
 class ProjectSearchDTO(Model):
     """ Describes the criteria users use to filter active projects"""
 
-    preferred_locale = StringType(required=True, default="en")
+    preferred_locale = StringType(default="en")
     mapper_level = StringType(validators=[is_known_mapping_level])
     mapping_types = ListType(StringType, validators=[is_known_mapping_type])
     project_statuses = ListType(StringType, validators=[is_known_project_status])
     organisation_tag = StringType()
     campaign_tag = StringType()
+    order_by = StringType(choices=ORDER_BY_OPTIONS)
+    order_by_type = StringType(choices=("ASC", "DESC"))
+    country = StringType()
     page = IntType(required=True)
     text_search = StringType()
     is_project_manager = BooleanType(required=True, default=False)
@@ -280,6 +318,7 @@ class ListSearchResultDTO(Model):
     last_updated = DateTimeType(serialized_name="lastUpdated")
     due_date = DateTimeType(serialized_name="dueDate")
     total_contributors = IntType(serialized_name="totalContributors")
+    country = StringType(serialize_when_none=False)
 
 
 class ProjectSearchResultsDTO(Model):
@@ -326,6 +365,9 @@ class ProjectContribDTO(Model):
     date = StringType(required=True)
     mapped = IntType(required=True)
     validated = IntType(required=True)
+    cumulative_mapped = IntType(required=False)
+    cumulative_validated = IntType(required=False)
+    total_tasks = IntType(required=False)
 
 
 class ProjectContribsDTO(Model):
@@ -345,25 +387,55 @@ class ProjectSummary(Model):
 
     project_id = IntType(required=True, serialized_name="projectId")
     area = FloatType(serialized_name="projectArea(in sq.km)")
-    name = StringType()
-    author = StringType(serialized_name="createdBy")
+    author = StringType()
     created = DateTimeType()
-    due_date = DateTimeType()
+    due_date = DateTimeType(serialized_name="dueDate")
     last_updated = DateTimeType(serialized_name="lastUpdated")
     priority = StringType(serialized_name="projectPriority")
     campaign_tag = StringType(serialized_name="campaignTag")
     organisation_tag = StringType(serialized_name="organisationTag")
+    country_tag = ListType(StringType, serialized_name="countryTag")
     entities_to_map = StringType(serialized_name="entitiesToMap")
+    mapping_types = ListType(
+        StringType, serialized_name="mappingTypes", validators=[is_known_mapping_type]
+    )
     changeset_comment = StringType(serialized_name="changesetComment")
     percent_mapped = IntType(serialized_name="percentMapped")
     percent_validated = IntType(serialized_name="percentValidated")
     percent_bad_imagery = IntType(serialized_name="percentBadImagery")
     aoi_centroid = BaseType(serialized_name="aoiCentroid")
     mapper_level = StringType(serialized_name="mapperLevel")
-    mapper_level_enforced = BooleanType(serialized_name="mapperLevelEnforced")
-    validator_level_enforced = BooleanType(serialized_name="validatorLevelEnforced")
-    short_description = StringType(serialized_name="shortDescription")
+    restrict_mapping_level_to_project = BooleanType(
+        serialized_name="restrictMappingLevelToProject"
+    )
+    restrict_validation_role = BooleanType(serialized_name="restrictValidationRole")
+    random_task_selection_enforced = BooleanType(
+        required=False, default=False, serialized_name="enforceRandomTaskSelection"
+    )
+    restrict_validation_level_intermediate = BooleanType(
+        serialized_name="restrictValidationLevelIntermediate"
+    )
+    private = BooleanType(serialized_name="private")
+    allowed_users = ListType(StringType, serialized_name="allowedUsernames", default=[])
+    project_info = ModelType(
+        ProjectInfoDTO, serialized_name="projectInfo", serialize_when_none=False
+    )
     status = StringType()
+    imagery = StringType()
+    mapping_editors = ListType(
+        StringType,
+        min_size=1,
+        required=True,
+        serialized_name="mappingEditors",
+        validators=[is_known_editor],
+    )
+    validation_editors = ListType(
+        StringType,
+        min_size=1,
+        required=True,
+        serialized_name="validationEditors",
+        validators=[is_known_editor],
+    )
 
 
 class PMDashboardDTO(Model):

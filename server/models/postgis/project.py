@@ -6,6 +6,9 @@ from cachetools import TTLCache, cached
 import geojson
 from flask import current_app
 from geoalchemy2 import Geometry
+import sqlalchemy
+from sqlalchemy.sql.expression import cast
+from sqlalchemy import func
 from sqlalchemy import text
 from shapely.geometry import shape
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -14,6 +17,7 @@ from geoalchemy2.shape import to_shape
 from shapely.ops import transform
 from functools import partial
 import pyproj
+import requests
 
 from server import db
 from server.models.dtos.project_dto import (
@@ -47,8 +51,19 @@ from server.models.postgis.utils import (
     timestamp,
     ST_Centroid,
     NotFound,
+    ST_X,
+    ST_Y,
 )
 from server.services.grid.grid_service import GridService
+
+
+# Secondary table defining many-to-many join for projects that were favorited by users.
+project_favorites = db.Table(
+    "project_favorites",
+    db.metadata,
+    db.Column("project_id", db.Integer, db.ForeignKey("projects.id")),
+    db.Column("user_id", db.BigInteger, db.ForeignKey("users.id")),
+)
 
 # Secondary table defining many-to-many join for private projects that only defined users can map on
 project_allowed_users = db.Table(
@@ -81,15 +96,18 @@ class Project(db.Model):
     mapper_level = db.Column(
         db.Integer, default=2, nullable=False, index=True
     )  # Mapper level project is suitable for
-    enforce_mapper_level = db.Column(db.Boolean, default=False)
-    enforce_validator_role = db.Column(
+    restrict_mapping_level_to_project = db.Column(db.Boolean, default=False)
+    restrict_validation_role = db.Column(
         db.Boolean, default=False
     )  # Means only users with validator role can validate
     enforce_random_task_selection = db.Column(
         db.Boolean, default=False
     )  # Force users to edit at random to avoid mapping "easy" tasks
-    allow_non_beginners = db.Column(db.Boolean, default=False)
+    restrict_validation_level_intermediate = db.Column(db.Boolean, default=False)
     private = db.Column(db.Boolean, default=False)  # Only allowed users can validate
+    featured = db.Column(
+        db.Boolean, default=False
+    )  # Only PMs can set a project as featured
     entities_to_map = db.Column(db.String)
     changeset_comment = db.Column(db.String)
     osmcha_filter_id = db.Column(
@@ -102,6 +120,7 @@ class Project(db.Model):
     license_id = db.Column(db.Integer, db.ForeignKey("licenses.id", name="fk_licenses"))
     geometry = db.Column(Geometry("MULTIPOLYGON", srid=4326))
     centroid = db.Column(Geometry("POINT", srid=4326))
+    country = db.Column(ARRAY(db.String), default=[])
     task_creation_mode = db.Column(
         db.Integer, default=TaskCreationMode.GRID.value, nullable=False
     )
@@ -155,6 +174,7 @@ class Project(db.Model):
         cascade="all, delete-orphan",
         single_parent=True,
     )
+    favorited = db.relationship(User, secondary=project_favorites, backref="favorites")
 
     def create_draft_project(self, draft_project_dto: DraftProjectDTO):
         """
@@ -187,6 +207,31 @@ class Project(db.Model):
             if self.changeset_comment is not None
             else f"{default_comment}-{self.id}"
         )
+        self.save()
+
+    def set_country_info(self):
+        """ Sets the default country based on centroid"""
+
+        lat, lng = (
+            db.session.query(
+                cast(ST_Y(Project.centroid), sqlalchemy.String),
+                cast(ST_X(Project.centroid), sqlalchemy.String),
+            )
+            .filter(Project.id == self.id)
+            .one()
+        )
+        url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={0}&lon={1}".format(
+            lat, lng
+        )
+        country_info = requests.get(url)
+        country_info_json = country_info.content.decode("utf8").replace("'", '"')
+        # Load the JSON to a Python list & dump it back out as formatted JSON
+        data = json.loads(country_info_json)
+        if data["address"].get("country") is not None:
+            self.country = [data["address"]["country"]]
+        else:
+            self.country = [data["address"]["county"]]
+
         self.save()
 
     def create(self):
@@ -244,8 +289,12 @@ class Project(db.Model):
         cloned_project.priority = original_project.priority
         cloned_project.default_locale = original_project.default_locale
         cloned_project.mapper_level = original_project.mapper_level
-        cloned_project.enforce_mapper_level = original_project.enforce_mapper_level
-        cloned_project.enforce_validator_role = original_project.enforce_validator_role
+        cloned_project.restrict_mapping_level_to_project = (
+            original_project.restrict_mapping_level_to_project
+        )
+        cloned_project.restrict_validation_role = (
+            original_project.restrict_validation_role
+        )
         cloned_project.enforce_random_task_selection = (
             original_project.enforce_random_task_selection
         )
@@ -289,10 +338,14 @@ class Project(db.Model):
         self.status = ProjectStatus[project_dto.project_status].value
         self.priority = ProjectPriority[project_dto.project_priority].value
         self.default_locale = project_dto.default_locale
-        self.enforce_mapper_level = project_dto.enforce_mapper_level
-        self.enforce_validator_role = project_dto.enforce_validator_role
+        self.restrict_mapping_level_to_project = (
+            project_dto.restrict_mapping_level_to_project
+        )
+        self.restrict_validation_role = project_dto.restrict_validation_role
         self.enforce_random_task_selection = project_dto.enforce_random_task_selection
-        self.allow_non_beginners = project_dto.allow_non_beginners
+        self.restrict_validation_level_intermediate = (
+            project_dto.restrict_validation_level_intermediate
+        )
         self.private = project_dto.private
         self.mapper_level = MappingLevel[project_dto.mapper_level.upper()].value
         self.entities_to_map = project_dto.entities_to_map
@@ -344,6 +397,7 @@ class Project(db.Model):
         for validation_editor in project_dto.validation_editors:
             validation_editors_array.append(Editors[validation_editor].value)
         self.validation_editors = validation_editors_array
+        self.country = project_dto.country_tag
 
         # Add list of allowed users, meaning the project can only be mapped by users in this list
         if hasattr(project_dto, "allowed_users"):
@@ -375,6 +429,37 @@ class Project(db.Model):
     def delete(self):
         """ Deletes the current model from the DB """
         db.session.delete(self)
+        db.session.commit()
+
+    def is_favorited(self, user_id: int) -> bool:
+        user = User.query.get(user_id)
+        if user not in self.favorited:
+            return False
+
+        return True
+
+    def favorite(self, user_id: int):
+        user = User.query.get(user_id)
+        self.favorited.append(user)
+        db.session.commit()
+
+    def unfavorite(self, user_id: int):
+        user = User.query.get(user_id)
+        if user not in self.favorited:
+            raise ValueError("Project not been favorited by user")
+        self.favorited.remove(user)
+        db.session.commit()
+
+    def set_as_featured(self):
+        if self.featured is True:
+            raise ValueError("Project is already featured")
+        self.featured = True
+        db.session.commit()
+
+    def unset_as_featured(self):
+        if self.featured is False:
+            raise ValueError("Project is not featured")
+        self.featured = False
         db.session.commit()
 
     def can_be_deleted(self) -> bool:
@@ -465,20 +550,13 @@ class Project(db.Model):
         return stats_dto
 
     def get_project_stats(self) -> ProjectStatsDTO:
-        """ Create Project Summary model for postgis project object"""
+        """ Create Project Stats model for postgis project object"""
         project_stats = ProjectStatsDTO()
         project_stats.project_id = self.id
-        polygon = to_shape(self.geometry)
-        polygon_aea = transform(
-            partial(
-                pyproj.transform,
-                pyproj.Proj(init="EPSG:4326"),
-                pyproj.Proj(proj="aea", lat1=polygon.bounds[1], lat2=polygon.bounds[3]),
-            ),
-            polygon,
-        )
-        area = polygon_aea.area / 1000000
-        project_stats.area = area
+        project_area_sql = "select ST_Area(geometry, true)/1000000 as area from public.projects where id = :id"
+        project_area_result = db.engine.execute(text(project_area_sql), id=self.id)
+
+        project_stats.area = project_area_result.fetchone()["area"]
         project_stats.total_mappers = (
             db.session.query(User).filter(User.projects_mapped.any(self.id)).count()
         )
@@ -582,23 +660,62 @@ class Project(db.Model):
             partial(
                 pyproj.transform,
                 pyproj.Proj(init="EPSG:4326"),
-                pyproj.Proj(proj="aea", lat1=polygon.bounds[1], lat2=polygon.bounds[3]),
+                pyproj.Proj(
+                    proj="aea", lat_1=polygon.bounds[1], lat_2=polygon.bounds[3]
+                ),
             ),
             polygon,
         )
         area = polygon_aea.area / 1000000
         summary.area = area
         summary.campaign_tag = self.campaign_tag
+        summary.country_tag = self.country
         summary.changeset_comment = self.changeset_comment
         summary.created = self.created
         summary.last_updated = self.last_updated
         summary.due_date = self.due_date
         summary.mapper_level = MappingLevel(self.mapper_level).name
-        summary.mapper_level_enforced = self.enforce_mapper_level
-        summary.validator_level_enforced = self.enforce_validator_role
+        summary.restrict_mapping_level_to_project = (
+            self.restrict_mapping_level_to_project
+        )
+        summary.restrict_validation_role = self.restrict_validation_role
+        summary.random_task_selection_enforced = self.enforce_random_task_selection
+        summary.restrict_validation_level_intermediate = (
+            self.restrict_validation_level_intermediate
+        )
+        summary.private = self.private
         summary.organisation_tag = self.organisation_tag
         summary.status = ProjectStatus(self.status).name
         summary.entities_to_map = self.entities_to_map
+        summary.imagery = self.imagery
+
+        # Cast MappingType values to related string array
+        mapping_types_array = []
+        if self.mapping_types:
+            for mapping_type in self.mapping_types:
+                mapping_types_array.append(MappingTypes(mapping_type).name)
+            summary.mapping_types = mapping_types_array
+
+        if self.mapping_editors:
+            mapping_editors = []
+            for mapping_editor in self.mapping_editors:
+                mapping_editors.append(Editors(mapping_editor).name)
+
+            summary.mapping_editors = mapping_editors
+
+        if self.validation_editors:
+            validation_editors = []
+            for validation_editor in self.validation_editors:
+                validation_editors.append(Editors(validation_editor).name)
+
+            summary.validation_editors = validation_editors
+
+        # If project is private, fetch list of allowed users
+        if self.private:
+            allowed_users = []
+            for user in self.allowed_users:
+                allowed_users.append(user.username)
+            summary.allowed_users = allowed_users
 
         centroid_geojson = db.session.scalar(self.centroid.ST_AsGeoJSON())
         summary.aoi_centroid = geojson.loads(centroid_geojson)
@@ -628,8 +745,7 @@ class Project(db.Model):
         project_info = ProjectInfo.get_dto_for_locale(
             self.id, preferred_locale, self.default_locale
         )
-        summary.name = project_info.name
-        summary.short_description = project_info.short_description
+        summary.project_info = project_info
 
         return summary
 
@@ -672,10 +788,14 @@ class Project(db.Model):
         base_dto.project_priority = ProjectPriority(self.priority).name
         base_dto.area_of_interest = self.get_aoi_geometry_as_geojson()
         base_dto.aoi_bbox = shape(base_dto.area_of_interest).bounds
-        base_dto.enforce_mapper_level = self.enforce_mapper_level
-        base_dto.enforce_validator_role = self.enforce_validator_role
+        base_dto.restrict_mapping_level_to_project = (
+            self.restrict_mapping_level_to_project
+        )
+        base_dto.restrict_validation_role = self.restrict_validation_role
         base_dto.enforce_random_task_selection = self.enforce_random_task_selection
-        base_dto.allow_non_beginners = self.allow_non_beginners
+        base_dto.restrict_validation_level_intermediate = (
+            self.restrict_validation_level_intermediate
+        )
         base_dto.private = self.private
         base_dto.mapper_level = MappingLevel(self.mapper_level).name
         base_dto.entities_to_map = self.entities_to_map
@@ -686,12 +806,34 @@ class Project(db.Model):
         base_dto.josm_preset = self.josm_preset
         base_dto.campaign_tag = self.campaign_tag
         base_dto.organisation_tag = self.organisation_tag
+        base_dto.country_tag = self.country
         base_dto.license_id = self.license_id
         base_dto.created = self.created
         base_dto.last_updated = self.last_updated
         base_dto.author = User().get_by_id(self.author_id).username
         base_dto.active_mappers = Project.get_active_mappers(self.id)
         base_dto.task_creation_mode = TaskCreationMode(self.task_creation_mode).name
+        base_dto.percent_mapped = Project.calculate_tasks_percent(
+            "mapped",
+            self.total_tasks,
+            self.tasks_mapped,
+            self.tasks_validated,
+            self.tasks_bad_imagery,
+        )
+        base_dto.percent_validated = Project.calculate_tasks_percent(
+            "validated",
+            self.total_tasks,
+            self.tasks_mapped,
+            self.tasks_validated,
+            self.tasks_bad_imagery,
+        )
+        base_dto.percent_bad_imagery = Project.calculate_tasks_percent(
+            "bad_imagery",
+            self.total_tasks,
+            self.tasks_mapped,
+            self.tasks_validated,
+            self.tasks_bad_imagery,
+        )
 
         if self.private:
             # If project is private it should have a list of allowed users
@@ -746,11 +888,20 @@ class Project(db.Model):
 
         return project_dto
 
-    def all_tasks_as_geojson(self):
+    def all_tasks_as_geojson(self, order_by=None, order_by_type="ASC", status=None):
         """ Creates a geojson of all areas """
-        project_tasks = Task.get_tasks_as_geojson_feature_collection(self.id)
+        project_tasks = Task.get_tasks_as_geojson_feature_collection(
+            self.id, order_by, order_by_type, status
+        )
 
         return project_tasks
+
+    @staticmethod
+    def get_all_countries():
+        query = db.session.query(func.unnest(Project.country)).distinct()
+        tags_dto = TagsDTO()
+        tags_dto.tags = [r[0] for r in query]
+        return tags_dto
 
     @staticmethod
     def get_all_organisations_tag(preferred_locale="en"):

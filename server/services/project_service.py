@@ -10,13 +10,17 @@ from server.models.dtos.project_dto import (
     ProjectUserStatsDTO,
     ProjectContribsDTO,
     ProjectContribDTO,
+    ProjectSearchResultsDTO,
 )
+
 from server.models.postgis.project import Project, ProjectStatus, MappingLevel
 from server.models.postgis.statuses import MappingNotAllowed, ValidatingNotAllowed
 from server.models.postgis.task import Task, TaskHistory, TaskAction
 from server.models.postgis.utils import NotFound
 from server.services.users.user_service import UserService
+from server.services.project_search_service import ProjectSearchService
 from sqlalchemy import func, or_
+from sqlalchemy.sql.expression import true
 
 summary_cache = TTLCache(maxsize=1024, ttl=600)
 
@@ -46,7 +50,7 @@ class ProjectService:
     @staticmethod
     def get_contribs_by_day(project_id: int) -> ProjectContribsDTO:
         # Validate that project exists.
-        # project = ProjectService.get_project_by_id(project_id)
+        project = ProjectService.get_project_by_id(project_id)
 
         stats = (
             TaskHistory.query.with_entities(
@@ -73,16 +77,30 @@ class ProjectService:
 
         contribs_dto = ProjectContribsDTO()
         dates = list(set(r[1] for r in stats))
-        dates.sort(reverse=True)
+        dates.sort(reverse=False)  # Why was this reversed?
         dates_list = []
+        cumulative_mapped = 0
+        cumulative_validated = 0
         for date in dates:
-            dto = ProjectContribDTO({"date": str(date), "mapped": 0, "validated": 0})
+            dto = ProjectContribDTO(
+                {
+                    "date": str(date),
+                    "mapped": 0,
+                    "validated": 0,
+                    "total_tasks": project.total_tasks,
+                }
+            )
             values = [(s[0], s[2]) for s in stats if date == s[1]]
             for val in values:
                 if val[0] == TaskAction.LOCKED_FOR_MAPPING.name:
                     dto.mapped = val[1]
+                    cumulative_mapped += val[1]
                 elif val[0] == TaskAction.LOCKED_FOR_VALIDATION.name:
                     dto.validated = val[1]
+                    cumulative_validated += int(val[1])
+
+                dto.cumulative_mapped = cumulative_mapped
+                dto.cumulative_validated = cumulative_validated
             dates_list.append(dto)
 
         contribs_dto.stats = dates_list
@@ -101,9 +119,11 @@ class ProjectService:
         return project.as_dto_for_mapping(locale, abbrev)
 
     @staticmethod
-    def get_project_tasks(project_id):
+    def get_project_tasks(
+        project_id, order_by: str = None, order_by_type: str = "ASC", status: int = None
+    ):
         project = ProjectService.get_project_by_id(project_id)
-        return project.all_tasks_as_geojson()
+        return project.all_tasks_as_geojson(order_by, order_by_type, status)
 
     @staticmethod
     def get_project_aoi(project_id):
@@ -166,7 +186,7 @@ class ProjectService:
         if len(tasks) > 0:
             return False, MappingNotAllowed.USER_ALREADY_HAS_TASK_LOCKED
 
-        if project.enforce_mapper_level:
+        if project.restrict_mapping_level_to_project:
             if not ProjectService._is_user_mapping_level_at_or_above_level_requests(
                 MappingLevel(project.mapper_level), user_id
             ):
@@ -217,7 +237,7 @@ class ProjectService:
         ):
             return False, ValidatingNotAllowed.PROJECT_NOT_PUBLISHED
 
-        if project.enforce_validator_role and not UserService.is_user_validator(
+        if project.restrict_validation_role and not UserService.is_user_validator(
             user_id
         ):
             return False, ValidatingNotAllowed.USER_NOT_VALIDATOR
@@ -233,6 +253,15 @@ class ProjectService:
             except StopIteration:
                 return False, ValidatingNotAllowed.USER_NOT_ON_ALLOWED_LIST
 
+        # Restrict validation by non-beginners users only
+        if project.restrict_validation_level_intermediate is True:
+            user = UserService.get_user_by_id(user_id)
+            if user.mapping_level not in (
+                MappingLevel.INTERMEDIATE.value,
+                MappingLevel.ADVANCED.value,
+            ):
+                return False, ValidatingNotAllowed.USER_IS_BEGINNER
+
         return True, "User allowed to validate"
 
     @staticmethod
@@ -243,6 +272,52 @@ class ProjectService:
         """ Gets the project summary DTO """
         project = ProjectService.get_project_by_id(project_id)
         return project.get_project_summary(preferred_locale)
+
+    @staticmethod
+    def set_project_as_featured(project_id: int):
+        """ Sets project as featured """
+        project = ProjectService.get_project_by_id(project_id)
+        project.set_as_featured()
+
+    @staticmethod
+    def unset_project_as_featured(project_id: int):
+        """ Sets project as featured """
+        project = ProjectService.get_project_by_id(project_id)
+        project.unset_as_featured()
+
+    @staticmethod
+    def get_featured_projects(preferred_locale):
+        """ Sets project as featured """
+        query = ProjectSearchService.create_search_query()
+        projects = query.filter(Project.featured == true()).group_by(Project.id).all()
+
+        # Get total contributors.
+        contrib_counts = ProjectSearchService.get_total_contributions(projects)
+        zip_items = zip(projects, contrib_counts)
+
+        dto = ProjectSearchResultsDTO()
+        dto.results = [
+            ProjectSearchService.create_result_dto(p, preferred_locale, t)
+            for p, t in zip_items
+        ]
+
+        return dto
+
+    @staticmethod
+    def is_favorited(project_id: int, user_id: int) -> bool:
+        project = ProjectService.get_project_by_id(project_id)
+
+        return project.is_favorited(user_id)
+
+    @staticmethod
+    def favorite(project_id: int, user_id: int):
+        project = ProjectService.get_project_by_id(project_id)
+        project.favorite(user_id)
+
+    @staticmethod
+    def unfavorite(project_id: int, user_id: int):
+        project = ProjectService.get_project_by_id(project_id)
+        project.unfavorite(user_id)
 
     @staticmethod
     def get_project_title(project_id: int, preferred_locale: str = "en") -> str:

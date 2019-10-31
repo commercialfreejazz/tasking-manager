@@ -1,24 +1,31 @@
 from cachetools import TTLCache, cached
 
-from sqlalchemy import func, text
+from sqlalchemy import func, text, desc, cast, extract, or_
+from sqlalchemy.types import Time
 from server import db
 from server.models.dtos.stats_dto import (
     ProjectContributionsDTO,
     UserContribution,
     Pagination,
     TaskHistoryDTO,
+    TaskStatusDTO,
     ProjectActivityDTO,
+    ProjectLastActivityDTO,
     HomePageStatsDTO,
     OrganizationStatsDTO,
     CampaignStatsDTO,
 )
+
+from server.models.dtos.project_dto import ProjectSearchResultsDTO
 from server.models.postgis.project import Project
 from server.models.postgis.statuses import TaskStatus
-from server.models.postgis.task import TaskHistory, User, Task
+from server.models.postgis.task import TaskHistory, User, Task, TaskAction
 from server.models.postgis.utils import timestamp, NotFound
 from server.services.project_service import ProjectService
+from server.services.project_search_service import ProjectSearchService
 from server.services.users.user_service import UserService
 
+from datetime import date, timedelta
 
 homepage_stats_cache = TTLCache(maxsize=4, ttl=30)
 
@@ -122,7 +129,7 @@ class StatsService:
         activity_dto = ProjectActivityDTO()
         for item in results.items:
             history = TaskHistoryDTO()
-            history.history_id = item.id
+            history.task_id = item.id
             history.task_id = item.task_id
             history.action = item.action
             history.action_text = item.action_text
@@ -132,6 +139,91 @@ class StatsService:
 
         activity_dto.pagination = Pagination(results)
         return activity_dto
+
+    @staticmethod
+    def get_popular_projects() -> ProjectSearchResultsDTO:
+        """ Get all projects ordered by task_history """
+        rate_func = func.count(TaskHistory.user_id) / extract(
+            "epoch", func.sum(cast(TaskHistory.action_date, Time))
+        )
+
+        query = TaskHistory.query.with_entities(
+            TaskHistory.project_id.label("id"), rate_func.label("rate")
+        )
+        # Implement filters.
+        query = (
+            query.filter(TaskHistory.action_date >= date.today() - timedelta(days=90))
+            .filter(
+                or_(
+                    TaskHistory.action == TaskAction.LOCKED_FOR_MAPPING.name,
+                    TaskHistory.action == TaskAction.LOCKED_FOR_VALIDATION.name,
+                )
+            )
+            .filter(TaskHistory.action_text is not None)
+            .filter(TaskHistory.action_text != "")
+        )
+        # Group by and order by.
+        sq = (
+            query.group_by(TaskHistory.project_id)
+            .order_by(desc("rate"))
+            .limit(10)
+            .subquery()
+        )
+
+        projects_query = ProjectSearchService.create_search_query()
+        projects = projects_query.filter(Project.id == sq.c.id)
+
+        # Get total contributors.
+        contrib_counts = ProjectSearchService.get_total_contributions(projects)
+        zip_items = zip(projects, contrib_counts)
+
+        dto = ProjectSearchResultsDTO()
+        dto.results = [
+            ProjectSearchService.create_result_dto(p, "en", t) for p, t in zip_items
+        ]
+
+        return dto
+
+    @staticmethod
+    def get_last_activity(project_id: int) -> ProjectLastActivityDTO:
+        """ Gets the last activity for a project's tasks """
+
+        results = (
+            db.session.query(
+                Task.id,
+                Task.project_id,
+                Task.task_status,
+                Task.locked_by,
+                Task.mapped_by,
+                Task.validated_by,
+            )
+            .filter(Task.project_id == project_id)
+            .order_by(Task.id.asc())
+        )
+
+        last_activity_dto = ProjectLastActivityDTO()
+
+        for item in results:
+            latest = TaskStatusDTO()
+            latest.task_id = item.id
+            latest.task_status = TaskStatus(item.task_status).name
+            latest_activity = (
+                db.session.query(TaskHistory.action_date, User.username)
+                .join(User)
+                .filter(
+                    TaskHistory.task_id == item.id,
+                    TaskHistory.project_id == project_id,
+                    User.id == TaskHistory.user_id,
+                )
+                .order_by(TaskHistory.id.desc())
+                .first()
+            )
+            if latest_activity:
+                latest.action_date = latest_activity[0]
+                latest.action_by = latest_activity[1]
+            last_activity_dto.activity.append(latest)
+
+        return last_activity_dto
 
     @staticmethod
     def get_user_contributions(project_id: int) -> ProjectContributionsDTO:
@@ -201,29 +293,22 @@ class StatsService:
             .all()
         )
 
-        # untagged_count = 0
-        # total_area = 0
-        # dto.total_area = 0
-        # total_area_sql = """select sum(ST_Area(geometry)) from public.projects as area"""
-        # total_area_result = db.engine.execute(total_area_sql)
-        # current_app.logger.debug(total_area_result)
-        # for rowproxy in total_area_result:
-        # rowproxy.items() returns an array like [(key0, value0), (key1, value1)]
-        # for tup in rowproxy.items():
-        # total_area += tup[1]
-        # current_app.logger.debug(total_area)
-        # dto.total_area = total_area
+        total_area_sql = """select coalesce(sum(ST_Area(geometry,true)/1000000),0) as sum
+                              from public.projects as area"""
+        total_area_result = db.engine.execute(total_area_sql)
 
-        tasks_mapped_sql = """select coalesce(sum(ST_Area(geometry)), 0) as sum
-                              from public.tasks where task_status = :task_status"""
+        dto.total_area = total_area_result.fetchone()["sum"]
+
+        tasks_mapped_sql = """select coalesce(sum(ST_Area(geometry, true)/1000000), 0) as sum from public.tasks
+                             where task_status = :task_status"""
         tasks_mapped_result = db.engine.execute(
             text(tasks_mapped_sql), task_status=TaskStatus.MAPPED.value
         )
 
         dto.total_mapped_area = tasks_mapped_result.fetchone()["sum"]
 
-        tasks_validated_sql = """select coalesce(sum(ST_Area(geometry)), 0) as sum
-                                 from public.tasks where task_status = :task_status"""
+        tasks_validated_sql = """select coalesce(sum(ST_Area(geometry, true)/1000000), 0) as sum from public.tasks
+                                 where task_status = :task_status"""
         tasks_validated_result = db.engine.execute(
             text(tasks_validated_sql), task_status=TaskStatus.VALIDATED.value
         )

@@ -3,18 +3,12 @@
 tasking-manager*.env
 
 # Generated frontend #
-client/node_modules/
-client/assets/styles/css
-client/app/taskingmanager.config.js
-client/package-lock.json
-client/yarn.lock
-
-# New frontend #
 frontend/node_modules/
 frontend/build/
 frontend/assets/styles/
 frontend/package-lock.json
 frontend/yarn.lock
+frontend/.env
 
 # Ignore dist folder as this contains the minimized build for deploy
 server/web/static/dist

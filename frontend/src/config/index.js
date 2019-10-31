@@ -1,35 +1,37 @@
-export const isStaging = process.env.REACT_APP_STACK === 'STAGING';
-export const isProd = process.env.REACT_APP_STACK === 'PRODUCTION';
+// API ENDPOINTS
+export const API_URL = process.env.REACT_APP_BASE_URL
+  ? process.env.REACT_APP_BASE_URL + '/api/v2/'
+  : 'http://127.0.0.1:5000/api/v2/';
+export const EDITS_API_URL = process.env.REACT_APP_EDITS_API_URL || '';
 
+// APPLICATION SETTINGS
+export const DEFAULT_LOCALE = process.env.REACT_APP_DEFAULT_LOCALE || 'en';
+export const PROJECTCARD_CONTRIBUTION_SHOWN_THRESHOLD =
+  process.env.REACT_APP_PROJECTCARD_CONTRIBUTION_SHOWN_THRESHOLD || 5;
+export const INTERMEDIATE_LEVEL_COUNT =
+  Number(process.env.REACT_APP_TM_MAPPER_LEVEL_INTERMEDIATE) || 250;
+export const ADVANCED_LEVEL_COUNT = Number(process.env.REACT_APP_TM_MAPPER_LEVEL_ADVANCED) || 500;
+export const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN || '';
 
-// API CONFIG
-// on local environment, use 127.0.0.1 not localhost,
-// otherwise the authentication will not work
-let api_url;
-if (isProd) {
-  api_url = 'https://tasks.hotosm.org/api/v1/';
-} else if (isStaging) {
-  api_url = 'https://tasks-stage.hotosm.org/api/v1/';
-} else {
-  api_url = process.env.API_URL || 'http://127.0.0.1:5000/api/v1/';
-}
-export const API_URL = api_url;
+// ORGANISATIONAL INFORMATION
+export const ORG_NAME = process.env.REACT_APP_ORG_NAME || '';
+export const ORG_CODE = process.env.REACT_APP_ORG_CODE || '';
+export const ORG_URL = process.env.REACT_APP_ORG_URL || '';
+export const ORG_TWITTER = process.env.REACT_APP_ORG_TWITTER || 'http://twitter.com';
+export const ORG_FB = process.env.REACT_APP_ORG_FB || 'https://www.facebook.com';
+export const ORG_INSTAGRAM = process.env.REACT_APP_ORG_INSTAGRAM || 'https://www.instagram.com';
+export const ORG_YOUTUBE = process.env.REACT_APP_ORG_YOUTUBE || 'https://www.youtube.com';
+export const ORG_GITHUB = process.env.REACT_APP_ORG_GITHUB || 'https://github.com/';
 
-export const EDITS_API_URL = process.env.EDITS_API_URL || 'https://osm-stats-production-api.azurewebsites.net/stats/hotosm';
+export const CUSTOM_ID_EDITOR_INSTANCE_NAME = process.env.REACT_APP_CUSTOM_ID_EDITOR_INSTANCE_NAME;
+export const CUSTOM_ID_EDITOR_INSTANCE_HOST = process.env.REACT_APP_CUSTOM_ID_EDITOR_INSTANCE_HOST;
 
-
-// ORGANIZATION CONFIG
-export const ORG_NAME = process.env.ORG_NAME || 'Humanitarian OpenStreetMap Team';
-export const ORG_CODE = process.env.ORG_CODE || 'HOT';
-export const ORG_URL = process.env.ORG_URL || 'hotosm.org'; // don't use http or https on this var
-
-// ORGANIZATION SOCIAL NETWORKS
-export const ORG_TWITTER = process.env.ORG_TWITTER || 'http://twitter.com/hotosm/';
-export const ORG_FB = process.env.ORG_FB || 'https://www.facebook.com/hotosm';
-export const ORG_INSTAGRAM = process.env.ORG_INSTAGRAM || 'https://www.instagram.com/hot.osm/';
-export const ORG_YOUTUBE = process.env.ORG_YOUTUBE || 'https://www.youtube.com/user/hotosm';
-export const ORG_GITHUB = process.env.ORG_GITHUB || 'https://github.com/hotosm/';
-
-
-// DEFAULT locale
-export const DEFAULT_LOCALE = process.env.TM_DEFAULT_LOCALE || 'en';
+export const TASK_COLOURS = {
+  READY: '#fff',
+  LOCKED_FOR_MAPPING: '#fff',
+  MAPPED: '#a1d7e5',
+  LOCKED_FOR_VALIDATION: '#a1d7e5',
+  VALIDATED: '#6cb570',
+  INVALIDATED: '#e6e6e6',
+  BADIMAGERY: '#e04141',
+};

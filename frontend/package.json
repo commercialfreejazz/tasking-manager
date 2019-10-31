@@ -4,29 +4,46 @@
   "license": "ISC",
   "private": false,
   "dependencies": {
+    "@lokibai/react-use-copy-clipboard": "^1.0.4",
     "@reach/router": "^1.2.1",
+    "axios": "^0.19.0",
+    "d3-array": "^2.3.1",
+    "dompurify": "^1.0.11",
+    "downshift-hooks": "^0.8.1",
+    "final-form": "^4.18.4",
+    "geojson-bounds": "^1.0.2",
+    "humanize-duration": "^3.21.0",
     "immutable": "^4.0.0-rc.12",
-    "node-sass": "^4.12.0",
-    "react": "^16.8.6",
+    "mapbox-gl": "^1.5.0",
+    "marked": "^0.7.0",
+    "node-sass": "^4.13.0",
+    "react": "^16.11.0",
     "react-click-outside": "^3.0.1",
-    "react-dom": "^16.8.6",
+    "react-dom": "^16.11.0",
+    "react-final-form": "^6.3.0",
     "react-intl": "^2.9.0",
-    "react-redux": "^7.0.3",
-    "react-scripts": "3.0.1",
-    "reactjs-popup": "^1.4.1",
-    "redux": "^4.0.1",
+    "react-meta-elements": "^1.0.0",
+    "react-placeholder": "^3.0.2",
+    "react-redux": "^7.1.1",
+    "react-scripts": "^3.2.0",
+    "react-select": "^3.0.8",
+    "reactjs-popup": "^1.5.0",
+    "redux": "^4.0.4",
     "redux-thunk": "^2.3.0",
+    "semiotic": "^1.20.3",
     "short-number": "^1.0.7",
     "tachyons": "^4.11.1",
+    "use-query-params": "^0.3.4",
     "webfontloader": "^1.6.28"
   },
   "scripts": {
     "build-locales": "combine-messages -i './src/**/messages.js' -o './src/locales/en.json'",
-    "start": "react-scripts start",
-    "build": "react-scripts build",
+    "preparation": "bash -c \"if (test -a ../tasking-manager.env); then grep -hs ^ ../tasking-manager.env .env.expand > .env; else cp .env.expand .env; fi\"",
+    "start": "npm run preparation && react-scripts start",
+    "build": "npm run preparation && react-scripts build",
+    "prettier": "prettier --write src/**/*.js",
     "lint": "eslint src",
-    "test": "npm run lint && react-scripts test",
-    "eject": "react-scripts eject"
+    "test": "npm run lint && react-scripts test"
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -45,6 +62,7 @@
   },
   "devDependencies": {
     "combine-react-intl-messages": "^2.0.2",
-    "react-test-renderer": "^16.8.6"
+    "prettier": "^1.18.2",
+    "react-test-renderer": "^16.11.0"
   }
 }

@@ -14,7 +14,12 @@ from server.models.dtos.user_dto import (
 )
 from server.models.postgis.licenses import License, users_licenses_table
 from server.models.postgis.project_info import ProjectInfo
-from server.models.postgis.statuses import MappingLevel, ProjectStatus, UserRole
+from server.models.postgis.statuses import (
+    MappingLevel,
+    ProjectStatus,
+    UserRole,
+    UserGender,
+)
 from server.models.postgis.utils import NotFound, timestamp
 
 
@@ -39,12 +44,34 @@ class User(db.Model):
     twitter_id = db.Column(db.String)
     facebook_id = db.Column(db.String)
     linkedin_id = db.Column(db.String)
+    slack_id = db.Column(db.String)
+    skype_id = db.Column(db.String)
+    irc_id = db.Column(db.String)
+    name = db.Column(db.String)
+    city = db.Column(db.String)
+    country = db.Column(db.String)
+    picture_url = db.Column(db.String)
+    gender = db.Column(db.Integer)
+    self_description_gender = db.Column(db.String)
+    default_editor = db.Column(db.String, default="iD", nullable=False)
+    mentions_notifications = db.Column(db.Boolean, default=True, nullable=False)
+    comments_notifications = db.Column(db.Boolean, default=False, nullable=False)
+    projects_notifications = db.Column(db.Boolean, default=True, nullable=False)
+    expert_mode = db.Column(db.Boolean, default=False)
     date_registered = db.Column(db.DateTime, default=timestamp)
     # Represents the date the user last had one of their tasks validated
     last_validation_date = db.Column(db.DateTime, default=timestamp)
 
     # Relationships
     accepted_licenses = db.relationship("License", secondary=users_licenses_table)
+
+    @property
+    def missing_maps_profile_url(self):
+        return f"http://www.missingmaps.org/users/#/{self.username}"
+
+    @property
+    def osm_profile_url(self):
+        return f"https://www.openstreetmap.org/user/{self.username}"
 
     def create(self):
         """ Creates and saves the current model to the DB """
@@ -67,19 +94,22 @@ class User(db.Model):
         self.username = username
         db.session.commit()
 
+    def update_picture_url(self, picture_url: str):
+        """ Update the profile picture """
+        self.picture_url = picture_url
+        db.session.commit()
+
     def update(self, user_dto: UserDTO):
+
         """ Update the user details """
-        self.email_address = (
-            user_dto.email_address.lower() if user_dto.email_address else None
-        )
-        self.twitter_id = user_dto.twitter_id.lower() if user_dto.twitter_id else None
-        self.facebook_id = (
-            user_dto.facebook_id.lower() if user_dto.facebook_id else None
-        )
-        self.linkedin_id = (
-            user_dto.linkedin_id.lower() if user_dto.linkedin_id else None
-        )
-        self.validation_message = user_dto.validation_message
+        for attr, value in user_dto.items():
+            if attr == "gender" and value is not None:
+                value = UserGender[value].value
+            if value:
+                setattr(self, attr, value)
+
+        if user_dto.gender != UserGender.SELF_DESCRIBE.name:
+            self.self_description_gender = None
         db.session.commit()
 
     def set_email_verified_status(self, is_verified: bool):
@@ -293,10 +323,29 @@ class User(db.Model):
         user_dto.twitter_id = self.twitter_id
         user_dto.linkedin_id = self.linkedin_id
         user_dto.facebook_id = self.facebook_id
+        user_dto.skype_id = self.skype_id
+        user_dto.slack_id = self.slack_id
+        user_dto.irc_id = self.irc_id
+        user_dto.city = self.city
+        user_dto.country = self.country
+        user_dto.name = self.name
+        user_dto.picture_url = self.picture_url
+        user_dto.osm_profile = self.osm_profile_url
+        user_dto.missing_maps_profile = self.missing_maps_profile_url
+        user_dto.default_editor = self.default_editor
+        user_dto.mentions_notifications = self.mentions_notifications
+        user_dto.projects_notifications = self.projects_notifications
+        user_dto.comments_notifications = self.comments_notifications
+        user_dto.expert_mode = self.expert_mode
         user_dto.validation_message = self.validation_message
         user_dto.total_time_spent = 0
         user_dto.time_spent_mapping = 0
         user_dto.time_spent_validating = 0
+        gender = None
+        if self.gender is not None:
+            gender = UserGender(self.gender).name
+        user_dto.gender = gender
+        user_dto.self_description_gender = self.self_description_gender
 
         sql = """SELECT SUM(TO_TIMESTAMP(action_text, 'HH24:MI:SS')::TIME) FROM task_history
                 WHERE action='LOCKED_FOR_VALIDATION'

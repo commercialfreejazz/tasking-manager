@@ -26,7 +26,7 @@ from server.models.postgis.utils import (
 from server import db
 from flask import current_app
 from geoalchemy2 import shape
-from sqlalchemy import func, distinct
+from sqlalchemy import func, distinct, desc
 import math
 
 
@@ -55,6 +55,82 @@ class BBoxTooBigError(Exception):
 
 class ProjectSearchService:
     @staticmethod
+    def create_search_query():
+        query = db.session.query(
+            Project.id.label("id"),
+            Project.mapper_level,
+            Project.priority,
+            Project.default_locale,
+            Project.centroid.ST_AsGeoJSON().label("centroid"),
+            Project.organisation_tag,
+            Project.campaign_tag,
+            Project.tasks_bad_imagery,
+            Project.tasks_mapped,
+            Project.tasks_validated,
+            Project.status,
+            Project.total_tasks,
+            Project.last_updated,
+            Project.due_date,
+            Project.country,
+        ).filter(Project.private is not True)
+
+        return query
+
+    @staticmethod
+    def create_result_dto(project, preferred_locale, total_contributors):
+        project_info_dto = ProjectInfo.get_dto_for_locale(
+            project.id, preferred_locale, project.default_locale
+        )
+        list_dto = ListSearchResultDTO()
+        list_dto.project_id = project.id
+        list_dto.locale = project_info_dto.locale
+        list_dto.name = project_info_dto.name
+        list_dto.priority = ProjectPriority(project.priority).name
+        list_dto.mapper_level = MappingLevel(project.mapper_level).name
+        list_dto.short_description = project_info_dto.short_description
+        list_dto.organisation_tag = project.organisation_tag
+        list_dto.last_updated = project.last_updated
+        list_dto.campaign_tag = project.campaign_tag
+        list_dto.due_date = project.due_date
+        list_dto.percent_mapped = Project.calculate_tasks_percent(
+            "mapped",
+            project.total_tasks,
+            project.tasks_mapped,
+            project.tasks_validated,
+            project.tasks_bad_imagery,
+        )
+        list_dto.percent_validated = Project.calculate_tasks_percent(
+            "validated",
+            project.total_tasks,
+            project.tasks_mapped,
+            project.tasks_validated,
+            project.tasks_bad_imagery,
+        )
+        list_dto.status = ProjectStatus(project.status).name
+        list_dto.active_mappers = Project.get_active_mappers(project.id)
+        list_dto.total_contributors = total_contributors
+        list_dto.country = project.country
+
+        return list_dto
+
+    @staticmethod
+    def get_total_contributions(paginated_results):
+        paginated_projects_ids = [p.id for p in paginated_results]
+
+        # We need to make a join to return projects without contributors.
+        project_contributors_count = (
+            Project.query.with_entities(
+                Project.id, func.count(distinct(TaskHistory.user_id)).label("total")
+            )
+            .filter(Project.id.in_(paginated_projects_ids))
+            .outerjoin(TaskHistory, TaskHistory.project_id == Project.id)
+            .group_by(Project.id)
+            .all()
+        )
+
+        return [p.total for p in project_contributors_count]
+
+    @staticmethod
     @cached(search_cache)
     def search_projects(search_dto: ProjectSearchDTO) -> ProjectSearchResultsDTO:
         """ Searches all projects for matches to the criteria provided by the user """
@@ -82,71 +158,26 @@ class ProjectSearchService:
         dto = ProjectSearchResultsDTO()
         dto.map_results = feature_collection
 
-        for project in paginated_results.items:
-            # This loop loads the paginated text results
-            # TODO would be nice to get this for an array rather than individually would be more efficient
-            project_info_dto = ProjectInfo.get_dto_for_locale(
-                project.id, search_dto.preferred_locale, project.default_locale
-            )
-            list_dto = ListSearchResultDTO()
-            list_dto.project_id = project.id
-            list_dto.locale = project_info_dto.locale
-            list_dto.name = project_info_dto.name
-            list_dto.priority = ProjectPriority(project.priority).name
-            list_dto.mapper_level = MappingLevel(project.mapper_level).name
-            list_dto.short_description = project_info_dto.short_description
-            list_dto.organisation_tag = project.organisation_tag
-            list_dto.last_updated = project.last_updated
-            list_dto.campaign_tag = project.campaign_tag
-            list_dto.due_date = project.due_date
-            list_dto.percent_mapped = Project.calculate_tasks_percent(
-                "mapped",
-                project.total_tasks,
-                project.tasks_mapped,
-                project.tasks_validated,
-                project.tasks_bad_imagery,
-            )
-            list_dto.percent_validated = Project.calculate_tasks_percent(
-                "validated",
-                project.total_tasks,
-                project.tasks_mapped,
-                project.tasks_validated,
-                project.tasks_bad_imagery,
-            )
-            list_dto.status = ProjectStatus(project.status).name
-            list_dto.active_mappers = Project.get_active_mappers(project.id)
-            list_dto.total_contributors = project.total_contributors
+        # Get all total contributions for each paginated project.
+        contrib_counts = ProjectSearchService.get_total_contributions(
+            paginated_results.items
+        )
+        zip_items = zip(paginated_results.items, contrib_counts)
 
-            dto.results.append(list_dto)
-
+        dto.results = [
+            ProjectSearchService.create_result_dto(p, search_dto.preferred_locale, t)
+            for p, t in zip_items
+        ]
         dto.pagination = Pagination(paginated_results)
+
         return dto
 
     @staticmethod
     def _filter_projects(search_dto: ProjectSearchDTO):
         """ Filters all projects based on criteria provided by user"""
-        query = (
-            db.session.query(
-                Project.id,
-                Project.mapper_level,
-                Project.priority,
-                Project.default_locale,
-                Project.centroid.ST_AsGeoJSON().label("centroid"),
-                Project.organisation_tag,
-                Project.campaign_tag,
-                Project.tasks_bad_imagery,
-                Project.tasks_mapped,
-                Project.tasks_validated,
-                Project.status,
-                Project.total_tasks,
-                Project.last_updated,
-                Project.due_date,
-                func.count(distinct(TaskHistory.user_id)).label("total_contributors"),
-            )
-            .join(TaskHistory, TaskHistory.project_id == Project.id)
-            .join(ProjectInfo)
-            .filter(ProjectInfo.locale.in_([search_dto.preferred_locale, "en"]))
-            .filter(Project.private is not True)
+        query = ProjectSearchService.create_search_query()
+        query = query.join(ProjectInfo).filter(
+            ProjectInfo.locale.in_([search_dto.preferred_locale, "en"])
         )
 
         project_status_array = [ProjectStatus.PUBLISHED.value]
@@ -192,18 +223,22 @@ class ProjectSearchService:
                 )
             )
 
-        query = query.group_by(Project.id)
+        if search_dto.country:
+            # Unnest country column array.
+            sq = Project.query.with_entities(
+                Project.id, func.unnest(Project.country).label("country")
+            ).subquery()
+            query = query.filter(
+                sq.c.country.ilike("%{}%".format(search_dto.country))
+            ).filter(Project.id == sq.c.id)
 
-        all_results = (
-            query.order_by(Project.priority, Project.id.desc())
-            .distinct(Project.priority, Project.id)
-            .all()
-        )
-        paginated_results = (
-            query.order_by(Project.priority, Project.id.desc())
-            .distinct(Project.priority, Project.id)
-            .paginate(search_dto.page, 14, True)
-        )
+        order_by = search_dto.order_by
+        if search_dto.order_by_type == "DESC":
+            order_by = desc(search_dto.order_by)
+
+        query = query.order_by(order_by).group_by(Project.id)
+        all_results = query.all()
+        paginated_results = query.paginate(search_dto.page, 14, True)
 
         return all_results, paginated_results
 

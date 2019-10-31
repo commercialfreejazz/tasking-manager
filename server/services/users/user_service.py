@@ -3,6 +3,7 @@ from flask import current_app
 import datetime
 from sqlalchemy import text, func, or_, desc
 from server import db
+from server.models.dtos.project_dto import ProjectFavoritesDTO
 from server.models.dtos.user_dto import (
     UserDTO,
     UserOSMDTO,
@@ -13,7 +14,7 @@ from server.models.dtos.user_dto import (
     UserContributionDTO,
     UserContributionsDTO,
     RecommendedProject,
-    UserRecommendedProjectsDTO
+    UserRecommendedProjectsDTO,
 )
 from server.models.postgis.message import Message
 from server.models.postgis.task import TaskHistory, TaskAction
@@ -89,15 +90,28 @@ class UserService:
         return dto
 
     @staticmethod
-    def update_username(user_id: int, osm_username: str) -> User:
+    def update_user(user_id: int, osm_username: str, picture_url: str) -> User:
         user = UserService.get_user_by_id(user_id)
         if user.username != osm_username:
             user.update_username(osm_username)
 
+        if picture_url is not None and user.picture_url != picture_url:
+            user.update_picture_url(picture_url)
+
         return user
 
     @staticmethod
-    def register_user(osm_id, username, changeset_count):
+    def get_projects_favorited(user_id: int) -> ProjectFavoritesDTO:
+        user = UserService.get_user_by_id(user_id)
+        projects_dto = [f.as_dto_for_admin(f.id) for f in user.favorites]
+
+        fav_dto = ProjectFavoritesDTO()
+        fav_dto.favorited_projects = projects_dto
+
+        return fav_dto
+
+    @staticmethod
+    def register_user(osm_id, username, changeset_count, picture_url):
         """
         Creates user in DB
         :param osm_id: Unique OSM user id
@@ -107,6 +121,8 @@ class UserService:
         new_user = User()
         new_user.id = osm_id
         new_user.username = username
+        if picture_url is not None:
+            new_user.picture_url = picture_url
 
         intermediate_level = current_app.config["MAPPER_LEVEL_INTERMEDIATE"]
         advanced_level = current_app.config["MAPPER_LEVEL_ADVANCED"]
@@ -155,16 +171,27 @@ class UserService:
             TaskHistory.user_id == user.id, TaskHistory.action_text == "VALIDATED"
         ).count()
         projects_mapped = (
-            TaskHistory.query.filter(
+            TaskHistory.query.with_entities(TaskHistory.project_id)
+            .filter(
                 TaskHistory.user_id == user.id, TaskHistory.action == "STATE_CHANGE"
             )
             .distinct(TaskHistory.project_id)
-            .count()
+            .all()
         )
-
+        countries_result = (
+            Project.query.with_entities(Project.country)
+            .filter(Project.id.in_(projects_mapped), Project.country.isnot(None))
+            .distinct(Project.country)
+            .all()
+        )
+        # tuple to list
+        countries_touched = [
+            country for country, in [country for country, in countries_result]
+        ]
         stats_dto.tasks_mapped = tasks_mapped
         stats_dto.tasks_validated = tasks_validated
-        stats_dto.projects_mapped = projects_mapped
+        stats_dto.projects_mapped = len(projects_mapped)
+        stats_dto.countries_touched = countries_touched
         stats_dto.total_time_spent = 0
         stats_dto.time_spent_mapping = 0
         stats_dto.time_spent_validating = 0
@@ -236,6 +263,15 @@ class UserService:
         return False
 
     @staticmethod
+    def is_user_admin(user_id: int) -> bool:
+        """ Is the user a project admin"""
+        user = UserService.get_user_by_id(user_id)
+        if UserRole(user.role) == UserRole.ADMIN:
+            return True
+
+        return False
+
+    @staticmethod
     def get_mapping_level(user_id: int):
         """ Gets mapping level user is at"""
         user = UserService.get_user_by_id(user_id)
@@ -281,51 +317,73 @@ class UserService:
     def get_recommended_projects(user_name: str, preferred_locale: str):
         """ Gets all projects a user has mapped or validated on """
         limit = 20
-        user = User.query.with_entities(User.id, User.mapping_level)\
-            .filter(User.username == user_name).one_or_none()
+        user = (
+            User.query.with_entities(User.id, User.mapping_level)
+            .filter(User.username == user_name)
+            .one_or_none()
+        )
         if user is None:
             raise NotFound()
 
         # Get all projects that the user has contributed
-        sq = TaskHistory.query.with_entities(TaskHistory.project_id.label('project_id'))\
-            .distinct(TaskHistory.project_id)\
-            .filter(TaskHistory.user_id==user.id).subquery() 
+        sq = (
+            TaskHistory.query.with_entities(TaskHistory.project_id.label("project_id"))
+            .distinct(TaskHistory.project_id)
+            .filter(TaskHistory.user_id == user.id)
+            .subquery()
+        )
 
         # Get all campaigns for all contributed projects.
-        campaign_tags = Project.query.with_entities(Project.campaign_tag.label('tag'))\
-            .distinct().filter(Project.campaign_tag != '')\
-            .filter(or_(Project.author_id == user.id, Project.id == sq.c.project_id)).subquery() 
+        campaign_tags = (
+            Project.query.with_entities(Project.campaign_tag.label("tag"))
+            .distinct()
+            .filter(Project.campaign_tag != "")
+            .filter(or_(Project.author_id == user.id, Project.id == sq.c.project_id))
+            .subquery()
+        )
 
         # Get projects with given campaign tags but without user contributions.
-        query = Project.query.with_entities(Project.id,
+        query = (
+            Project.query.with_entities(
+                Project.id,
                 ProjectInfo.name,
                 Project.centroid.ST_AsGeoJSON().label("centroid"),
                 Project.tasks_mapped,
                 Project.tasks_validated,
-                Project.status, Project.total_tasks)\
-            .join(ProjectInfo)\
-            .distinct()\
-            .filter(Project.private is not True)\
-            .filter(Project.id != sq.c.project_id)\
+                Project.status,
+                Project.total_tasks,
+            )
+            .join(ProjectInfo)
+            .distinct()
+            .filter(Project.private is not True)
+            .filter(Project.id != sq.c.project_id)
             .filter(Project.mapper_level <= user.mapping_level)
+        )
 
-        projs = query.filter(Project.campaign_tag ==  campaign_tags.c.tag).limit(limit).all()
+        projs = (
+            query.filter(Project.campaign_tag == campaign_tags.c.tag).limit(limit).all()
+        )
 
         # Get only user mapping level projects.
         len_projs = len(projs)
         if len_projs < limit:
-            proj_ids = [p.id for p in projs]
-            remaining_projs = query.limit(limit-len_projs).all()
+            remaining_projs = query.limit(limit - len_projs).all()
             projs.extend(remaining_projs)
 
         proj_dto = UserRecommendedProjectsDTO()
-        proj_dto.recommended_projects = [RecommendedProject(dict(
-            project_id=r.id,
-            name= r.name,
-            tasks_mapped=r.tasks_mapped,
-            tasks_validated=r.tasks_validated,
-            status=r.status,
-            centroid=r.centroid)) for r in projs]
+        proj_dto.recommended_projects = [
+            RecommendedProject(
+                dict(
+                    project_id=r.id,
+                    name=r.name,
+                    tasks_mapped=r.tasks_mapped,
+                    tasks_validated=r.tasks_validated,
+                    status=r.status,
+                    centroid=r.centroid,
+                )
+            )
+            for r in projs
+        ]
 
         return proj_dto
 

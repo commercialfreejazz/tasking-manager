@@ -1,16 +1,13 @@
 import React from 'react';
 import onClickOutside from 'react-click-outside';
 
-import { ChevronDownIcon } from './svgIcons';
+import { ChevronDownIcon, CheckIcon } from './svgIcons';
 import { CustomButton } from './button';
-
 
 class DropdownContent extends React.PureComponent {
   isActive = (obj: Object) => {
-    for (let v of this.props.value) {
-      if (v.label === obj.label) {
-        return true;
-      }
+    if (this.props.value === obj.label) {
+      return true;
     }
     return false;
   };
@@ -47,14 +44,18 @@ class DropdownContent extends React.PureComponent {
   };
   render() {
     return (
-      <div className="di tl mt1 ba b--grey-light br1 fixed shadow-1 z-1 flex flex-column">
-        {this.props.options.map((i, k) =>
+      <div
+        className={`di tl mt1 ba b--grey-light br1 absolute shadow-1 z-3 flex flex-column${
+          this.props.toTop ? ' bottom-3' : ''
+        }`}
+      >
+        {this.props.options.map((i, k) => (
           <span
             key={k}
             onClick={this.handleClick.bind(null, i)}
-            className="pa3 bg-white bg-animate hover-bg-red-light"
+            className="pa3 bg-animate bg-white hover-bg-tan"
           >
-            {this.props.multi &&
+            {this.props.multi && (
               <input
                 data-label={i.label}
                 data-payload={JSON.stringify(i)}
@@ -62,24 +63,28 @@ class DropdownContent extends React.PureComponent {
                 checked={this.isActive(i)}
                 value={i.label}
                 className="mr2"
-              />}
-            {i.href
-              ? <a
-                  target={'_blank'}
-                  href={i.href}
-                  onClick={this.props.toggleDropdown}
-                  className={`${this.isActive(i) && 'b'}`}
-                >
-                  {i.label}
-                </a>
-              : <span
-                  onClick={this.props.toggleDropdown}
-                  className={`${this.isActive(i) && 'b'}`}
-                >
-                  {i.label}
-                </span>
-            }
-            {this.props.deletable &&
+              />
+            )}
+            {i.href ? (
+              <a target={'_blank'} href={i.href} onClick={this.props.toggleDropdown}>
+                {i.label}
+                {this.isActive(i) && (
+                  <span className="red pl4">
+                    <CheckIcon />
+                  </span>
+                )}
+              </a>
+            ) : (
+              <span onClick={this.props.toggleDropdown}>
+                {i.label}
+                {this.isActive(i) && (
+                  <span className="red pl4">
+                    <CheckIcon />
+                  </span>
+                )}
+              </span>
+            )}
+            {this.props.deletable && (
               <span
                 onClick={e => {
                   e.preventDefault();
@@ -89,9 +94,10 @@ class DropdownContent extends React.PureComponent {
                 }}
               >
                 x
-              </span>}
+              </span>
+            )}
           </span>
-        )}
+        ))}
       </div>
     );
   }
@@ -108,23 +114,25 @@ export class _Dropdown extends React.PureComponent {
     options: Array<Object>,
     display: string,
     deletable?: (value: string) => any,
-    multi: boolean
+    multi: boolean,
+    toTop: boolean,
   };
 
   state = {
-    display: false
+    display: false,
   };
   handleClickOutside = () => {
     this.setState({
-      display: false
+      display: false,
     });
   };
   toggleDropdown = () => {
     this.setState({
-      display: !this.state.display
+      display: !this.state.display,
     });
   };
   isActive = (obj: Object) => {
+    //eslint-disable-next-line
     for (let v of this.props.value) {
       if (v.label === obj.label) {
         return true;
@@ -132,21 +140,29 @@ export class _Dropdown extends React.PureComponent {
     }
     return false;
   };
+  getActiveOrDisplay() {
+    const activeItems = this.props.options.filter(
+      item => item.label === this.props.value || item.value === this.props.value,
+    );
+    return activeItems.length === 0 || activeItems.length > 1
+      ? this.props.display
+      : activeItems[0].label;
+  }
   render() {
     return (
-      <div className={`dib pointer ba b--grey-light ${this.props.className || ''}`}>
-        <CustomButton
-          onClick={this.toggleDropdown}
-          className={`${this.props.className || ''}`}
-        >
-          {this.props.display} <ChevronDownIcon style={{height: "14px"}} className="pl2 v-mid"/>
+      <div className={`dib pointer`}>
+        <CustomButton onClick={this.toggleDropdown} className={`${this.props.className || ''}`}>
+          {this.getActiveOrDisplay()}{' '}
+          <ChevronDownIcon style={{ height: '14px' }} className="pl2 v-mid" />
         </CustomButton>
-        {this.state.display &&
+        {this.state.display && (
           <DropdownContent
             {...this.props}
             eventTypes={['click', 'touchend']}
             toggleDropdown={this.toggleDropdown}
-          />}
+            toTop={this.props.toTop}
+          />
+        )}
       </div>
     );
   }

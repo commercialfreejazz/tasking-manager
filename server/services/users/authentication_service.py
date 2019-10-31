@@ -1,13 +1,15 @@
 import base64
 import urllib.parse
 
-from flask import current_app, request
+from flask import current_app, request, session
 from flask_httpauth import HTTPTokenAuth
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
+from server import osm
 from server.api.utils import TMAPIDecorators
 from server.services.messaging.message_service import MessageService
 from server.services.users.user_service import UserService, NotFound
+from werkzeug import url_quote
 
 token_auth = HTTPTokenAuth(scheme="Token")
 tm = TMAPIDecorators()
@@ -53,7 +55,7 @@ class AuthServiceError(Exception):
 
 class AuthenticationService:
     @staticmethod
-    def login_user(osm_user_details, redirect_to, user_element="user") -> str:
+    def login_user(osm_user_details, user_element="user") -> str:
         """
         Generates authentication details for user, creating in DB if user is unknown to us
         :param osm_user_details: XML response from OSM
@@ -71,28 +73,28 @@ class AuthenticationService:
         username = osm_user.attrib["display_name"]
         try:
             # get gravatar profile picture file name
-            user_picture = (
-                osm_user.find("img").attrib["href"].split("/avatar/")[1].split("?s=")[0]
-            )
+            user_picture = osm_user.find("img").attrib["href"]
         except (AttributeError, IndexError):
             user_picture = None
 
         try:
             UserService.get_user_by_id(osm_id)
-            UserService.update_username(osm_id, username)
+            UserService.update_user(osm_id, username, user_picture)
         except NotFound:
             # User not found, so must be new user
             changesets = osm_user.find("changesets")
             changeset_count = int(changesets.attrib["count"])
-            new_user = UserService.register_user(osm_id, username, changeset_count)
+            new_user = UserService.register_user(
+                osm_id, username, changeset_count, user_picture
+            )
             MessageService.send_welcome_message(new_user)
 
         session_token = AuthenticationService.generate_session_token_for_user(osm_id)
-        authorized_url = AuthenticationService.generate_authorized_url(
-            username, session_token, redirect_to, user_picture
-        )
-
-        return authorized_url
+        return {
+            "username": username,
+            "session_token": session_token,
+            "picture": user_picture,
+        }
 
     @staticmethod
     def authenticate_email_token(username: str, token: str):
@@ -146,26 +148,14 @@ class AuthenticationService:
         return serializer.dumps(osm_id)
 
     @staticmethod
-    def generate_authorized_url(username, session_token, redirect_to, user_picture):
-        """ Generate URL that we'll redirect the user to once authenticated """
-        base_url = current_app.config["FRONTEND_BASE_URL"]
+    def generate_authorize_url(callback):
+        token, secret = osm.generate_request_token(callback)
+        url = f"{osm.expand_url(osm.authorize_url)}?oauth_token={url_quote(token)}"
 
-        redirect_query = ""
-        picture_query = ""
-        if redirect_to:
-            redirect_query = f"&redirect_to={urllib.parse.quote(redirect_to)}"
-        if user_picture:
-            picture_query = f"&picture={user_picture}"
+        # Remove tokens from session. The library creates it.
+        session.pop("osm_oauthtok")
 
-        # Trailing & added as Angular a bit flaky with parsing querystring
-        authorized_url = "{}/authorized?username={}&session_token={}&ng=0{}{}".format(
-            base_url,
-            urllib.parse.quote(username),
-            session_token,
-            redirect_query,
-            picture_query,
-        )
-        return authorized_url
+        return {"auth_url": url, "oauth_token": token, "oauth_token_secret": secret}
 
     @staticmethod
     def is_valid_token(token, token_expiry):
