@@ -50,7 +50,7 @@ class ProjectService:
     @staticmethod
     def get_contribs_by_day(project_id: int) -> ProjectContribsDTO:
         # Validate that project exists.
-        # project = ProjectService.get_project_by_id(project_id)
+        project = ProjectService.get_project_by_id(project_id)
 
         stats = (
             TaskHistory.query.with_entities(
@@ -77,16 +77,30 @@ class ProjectService:
 
         contribs_dto = ProjectContribsDTO()
         dates = list(set(r[1] for r in stats))
-        dates.sort(reverse=True)
+        dates.sort(reverse=False)  # Why was this reversed?
         dates_list = []
+        cumulative_mapped = 0
+        cumulative_validated = 0
         for date in dates:
-            dto = ProjectContribDTO({"date": str(date), "mapped": 0, "validated": 0})
+            dto = ProjectContribDTO(
+                {
+                    "date": str(date),
+                    "mapped": 0,
+                    "validated": 0,
+                    "total_tasks": project.total_tasks,
+                }
+            )
             values = [(s[0], s[2]) for s in stats if date == s[1]]
             for val in values:
                 if val[0] == TaskAction.LOCKED_FOR_MAPPING.name:
                     dto.mapped = val[1]
+                    cumulative_mapped += val[1]
                 elif val[0] == TaskAction.LOCKED_FOR_VALIDATION.name:
                     dto.validated = val[1]
+                    cumulative_validated += int(val[1])
+
+                dto.cumulative_mapped = cumulative_mapped
+                dto.cumulative_validated = cumulative_validated
             dates_list.append(dto)
 
         contribs_dto.stats = dates_list
@@ -105,9 +119,11 @@ class ProjectService:
         return project.as_dto_for_mapping(locale, abbrev)
 
     @staticmethod
-    def get_project_tasks(project_id):
+    def get_project_tasks(
+        project_id, order_by: str = None, order_by_type: str = "ASC", status: int = None
+    ):
         project = ProjectService.get_project_by_id(project_id)
-        return project.all_tasks_as_geojson()
+        return project.all_tasks_as_geojson(order_by, order_by_type, status)
 
     @staticmethod
     def get_project_aoi(project_id):
@@ -286,6 +302,22 @@ class ProjectService:
         ]
 
         return dto
+
+    @staticmethod
+    def is_favorited(project_id: int, user_id: int) -> bool:
+        project = ProjectService.get_project_by_id(project_id)
+
+        return project.is_favorited(user_id)
+
+    @staticmethod
+    def favorite(project_id: int, user_id: int):
+        project = ProjectService.get_project_by_id(project_id)
+        project.favorite(user_id)
+
+    @staticmethod
+    def unfavorite(project_id: int, user_id: int):
+        project = ProjectService.get_project_by_id(project_id)
+        project.unfavorite(user_id)
 
     @staticmethod
     def get_project_title(project_id: int, preferred_locale: str = "en") -> str:
